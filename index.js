@@ -1,46 +1,64 @@
 'use strict';
 
-function findAreaCodesOnPage() {
-    var areaCodes = {};
-    var codesContainers = document.querySelectorAll('.codes_container');
-    codesContainers.forEach(function(codesContainer) {
-        // Find all the area codes in each codes container
-        var anchors = codesContainer.querySelectorAll('a');
-        anchors.forEach(function(anchor) {
-            var areaCode = anchor.querySelector('b').textContent;
-            if (areaCode.length > 1) {
-                areaCodes[areaCode] = true;
-            }
-        });
-    });
+var request = require('request');
+var cheerio = require('cheerio');
+var fs = require('fs');
+var log = fs.createWriteStream('results.csv');
 
+var URL = 'http://www.allareacodes.com/';
+
+// Get all the area codes
+request(URL, function (error, response, body) {
+    if (!error && response.statusCode === 200) {
+        var $ = cheerio.load(body);
+        var areaCodes = findAreaCodesOnPage($);
+        crawlTheSite(areaCodes, log);
+    }
+});
+
+function findAreaCodesOnPage($) {
+    var areaCodes = {};
+    $('.codes_container b').each(function (i, element) {
+        var areaCode = $(element).text();
+        if (areaCode.length > 1) {
+            areaCodes[areaCode] = true;
+        }
+    });
     return Object.keys(areaCodes);
 }
 
-function scrapeAreaCodeTableOnPage() {
-    var areaCodes = {};
-    var areaCodesTable = document.querySelector('.table.table-striped.table-condensed');
-    var areaCodesRows = areaCodesTable.querySelectorAll('tbody > tr');
-    areaCodesRows.forEach(function(areaCodesRow) {
-        var tableColumns = areaCodesRow.querySelectorAll('td');
-        var prefix = tableColumns[0].textContent;
-        var city = tableColumns[1].textContent;
-        var company = tableColumns[2].textContent;
-        var county = tableColumns[3].textContent;
-        var usage = tableColumns[4].textContent;
-        var introduced = tableColumns[5].textContent;
+function crawlTheSite(areaCodes) {
+    areaCodes.forEach(function (areaCode) {
+        var theUrl = URL + areaCode;
+        console.log('Scraping ' + theUrl);
+        request(theUrl, function (error, response, body) {
+            if (!error && response.statusCode === 200) {
+                var $ = cheerio.load(body);
+                var areaCodes = scrapeAreaCodeTableOnPage($)
+                log.write(areaCodes.join('\n').toString() + '\n');
+            }
+        });
+    });
+}
+
+function scrapeAreaCodeTableOnPage($) {
+    var areaCodes = [];
+    var areaCodesRows = $('.table.table-striped.table-condensed tbody > tr');
+    areaCodesRows.each(function(i, areaCodesRow) {
+        var tableColumns = $(areaCodesRow).children('td');
+        var prefix = tableColumns.eq(0).text();
+        var city = tableColumns.eq(1).text();
+        var company = tableColumns.eq(2).text();
+        var county = tableColumns.eq(3).text();
+        var usage = tableColumns.eq(4).text();
+        var introduced = tableColumns.eq(5).text();
 
         if (prefix.length > 1) {
-            areaCodes[prefix] = {
-                prefix,
-                city,
-                company,
-                county,
-                usage,
-                introduced
-            };
+            var row = [prefix, city, company, county, usage, introduced].map(function (column) {
+                return '"' + column + '"';
+            });
+            areaCodes.push(row);
         }
     });
-
     return areaCodes;
 }
